@@ -1,0 +1,102 @@
+/* ── Reset & base ─────────────────────────────────────────────────────────── */
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    background: #0a0a0a;
+    color: #c9d1c9;
+    font-family: 'Press Start 2P', monospace;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    overflow: hidden;
+}
+
+/* ── Game wrapper ─────────────────────────────────────────────────────────── */
+.game-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 16px;
+}
+
+/* ── Canvas container ────────────────────────────────────────────────────── */
+.canvas-container {
+    position: relative;
+    display: inline-block;
+    border: 2px solid #1e3a1e;
+    box-shadow:
+        0 0 0 1px #0a180a,
+        0 0 20px rgba(68, 255, 136, 0.08);
+}
+
+canvas {
+    display: block;
+    background: #0a0a0a;
+    cursor: crosshair;
+    /* pixel-art rendering (if needed) */
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+}
+
+canvas:focus {
+    outline: none;
+}
+
+/* ── Fullscreen button ───────────────────────────────────────────────────── */
+#fullscreenBtn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 32px;
+    height: 32px;
+    background: rgba(0, 0, 0, 0.55);
+    border: 1px solid #2a2a2a;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.4;
+    transition: opacity 0.2s;
+    color: #aaa;
+    padding: 0;
+}
+
+#fullscreenBtn:hover {
+    opacity: 1;
+}
+
+#fullscreenBtn svg {
+    width: 16px;
+    height: 16px;
+}
+
+/* Show the right icon depending on fullscreen state */
+.canvas-container:not(.is-fullscreen) .icon-compress { display: none; }
+.canvas-container.is-fullscreen      .icon-expand    { display: none; }
+
+/* ── Fullscreen mode ─────────────────────────────────────────────────────── */
+.canvas-container.is-fullscreen {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    border: none;
+    box-shadow: none;
+    background: #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+}
+
+.canvas-container.is-fullscreen canvas {
+    max-width: 100vw;
+    max-height: 100vh;
+}
