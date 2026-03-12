@@ -100,6 +100,102 @@ export class CollisionUtils {
         return dx * dx + dy * dy <= r * r;
     }
 
+    /**
+     * Resolve two overlapping circular RigidBodyGameObjects.
+     * Separates positions and exchanges velocity along the collision normal.
+     *
+     * @param {{x,y,vx,vy,radius,restitution,invMass}} a
+     * @param {{x,y,vx,vy,radius,restitution,invMass}} b
+     */
+    static resolveCircles(a, b) {
+        const dx   = b.x - a.x;
+        const dy   = b.y - a.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const minDist = a.radius + b.radius;
+
+        if (dist >= minDist || dist === 0) return;
+
+        // Collision normal
+        const nx = dx / dist;
+        const ny = dy / dist;
+
+        // Separate positions equally
+        const overlap = (minDist - dist) / 2;
+        a.x -= nx * overlap;
+        a.y -= ny * overlap;
+        b.x += nx * overlap;
+        b.y += ny * overlap;
+
+        // Relative velocity along normal
+        const dvx = b.vx - a.vx;
+        const dvy = b.vy - a.vy;
+        const dot  = dvx * nx + dvy * ny;
+        if (dot > 0) return; // already separating
+
+        const restitution = Math.min(a.restitution, b.restitution);
+        const impulse = -(1 + restitution) * dot / (a.invMass + b.invMass);
+        a.vx -= impulse * a.invMass * nx;
+        a.vy -= impulse * a.invMass * ny;
+        b.vx += impulse * b.invMass * nx;
+        b.vy += impulse * b.invMass * ny;
+    }
+
+    /**
+     * Resolve a particle against a perimeter edge defined by two particles.
+     * Finds the closest point on the segment edgeA→edgeB, pushes the particle
+     * out if penetrating, and applies a velocity impulse split by inverse mass.
+     */
+    static resolveParticleEdge(p, edgeA, edgeB) {
+        const ax = edgeB.x - edgeA.x;
+        const ay = edgeB.y - edgeA.y;
+        const lenSq = ax * ax + ay * ay;
+        if (lenSq === 0) return;
+
+        // Closest point on segment (t clamped to [0,1])
+        const t = Math.max(0, Math.min(1,
+            ((p.x - edgeA.x) * ax + (p.y - edgeA.y) * ay) / lenSq));
+        const cx = edgeA.x + t * ax;
+        const cy = edgeA.y + t * ay;
+
+        const dx = p.x - cx;
+        const dy = p.y - cy;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist >= p.radius || dist === 0) return;
+
+        // Normal from edge surface toward particle
+        const nx    = dx / dist;
+        const ny    = dy / dist;
+        const depth = p.radius - dist;
+
+        // Position correction weighted by inverse mass
+        const totalInvMass = p.invMass + edgeA.invMass * (1 - t) + edgeB.invMass * t;
+        if (totalInvMass === 0) return;
+
+        p.x     += nx * depth * (p.invMass / totalInvMass);
+        p.y     += ny * depth * (p.invMass / totalInvMass);
+        edgeA.x -= nx * depth * (edgeA.invMass * (1 - t) / totalInvMass);
+        edgeA.y -= ny * depth * (edgeA.invMass * (1 - t) / totalInvMass);
+        edgeB.x -= nx * depth * (edgeB.invMass * t / totalInvMass);
+        edgeB.y -= ny * depth * (edgeB.invMass * t / totalInvMass);
+
+        // Velocity of edge at contact point (interpolated)
+        const evx = edgeA.vx * (1 - t) + edgeB.vx * t;
+        const evy = edgeA.vy * (1 - t) + edgeB.vy * t;
+        const rvx = p.vx - evx;
+        const rvy = p.vy - evy;
+        const vn  = rvx * nx + rvy * ny;
+        if (vn > 0) return; // already separating
+
+        const restitution = Math.min(p.restitution, edgeA.restitution, edgeB.restitution);
+        const impulse = -(1 + restitution) * vn / totalInvMass;
+        p.vx     += impulse * p.invMass * nx;
+        p.vy     += impulse * p.invMass * ny;
+        edgeA.vx -= impulse * edgeA.invMass * (1 - t) * nx;
+        edgeA.vy -= impulse * edgeA.invMass * (1 - t) * ny;
+        edgeB.vx -= impulse * edgeB.invMass * t * nx;
+        edgeB.vy -= impulse * edgeB.invMass * t * ny;
+    }
+
     // ── Canvas boundary check ─────────────────────────────────────────────────
 
     /**

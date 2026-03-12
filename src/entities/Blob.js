@@ -56,6 +56,33 @@ export class Blob extends GameObject{
         for (const p of this.particles) p.update(dt);
     }
 
+    // Returns particle positions as vertices for SAT broad-phase.
+    getVertices() {
+        return this.particles.map(p => ({ x: p.x, y: p.y }));
+    }
+
+    // Returns perimeter edges as [particleA, particleB] pairs for particle-edge collision.
+    getEdges() {
+        const edges = [];
+        const n = this.particles.length;
+        for (let i = 0; i < n; i++)
+            edges.push([this.particles[i], this.particles[(i + 1) % n]]);
+        return edges;
+    }
+
+    // Override so checkAABB uses the live particle extents, not the default (0,0) box.
+    getBroadBounds() {
+        let minX = Infinity, maxX = -Infinity;
+        let minY = Infinity, maxY = -Infinity;
+        for (const p of this.particles) {
+            if (p.x - p.radius < minX) minX = p.x - p.radius;
+            if (p.x + p.radius > maxX) maxX = p.x + p.radius;
+            if (p.y - p.radius < minY) minY = p.y - p.radius;
+            if (p.y + p.radius > maxY) maxY = p.y + p.radius;
+        }
+        return { left: minX, right: maxX, top: minY, bottom: maxY };
+    }
+
     // Dragging logic: find nearest particle to mouse down, then apply forces to it while dragging
 
     startDrag(mx, my) {

@@ -147,10 +147,25 @@ function update(dt) {
         // TODO: update player, enemies, etc.
         // player.update(dt, input);
         // for (const e of enemies) e.update(dt);
-        // checkCollisions();
+
+        // Drag: on click find the single closest blob and grab it;
+        // release all blobs when mouse is up.
+        if (input.mouse.justLeft) {
+            let bestBlob = null;
+            let bestDist = Infinity;
+            for (const blob of blobs) {
+                for (const p of blob.particles) {
+                    const d = Math.hypot(p.x - input.mouse.x, p.y - input.mouse.y);
+                    if (d < bestDist) { bestDist = d; bestBlob = blob; }
+                }
+            }
+            if (bestBlob) bestBlob.startDrag(input.mouse.x, input.mouse.y);
+        }
+        if (!input.mouse.left) {
+            for (const blob of blobs) blob.endDrag();
+        }
+
         for (const blob of blobs) {
-            if (input.mouse.justLeft)  blob.startDrag(input.mouse.x, input.mouse.y);
-            if (!input.mouse.left)     blob.endDrag();
             blob.updateDrag(input.mouse.x, input.mouse.y, dt);
 
             Gravity.apply(blob.particles, dt);
@@ -158,6 +173,18 @@ function update(dt) {
             for (const p of blob.particles) {
                 CollisionUtils.resolveCircleBoundary(p, canvas.width, canvas.height);
             }
+        }
+
+        // Softbody collision: particle-to-edge on both sides
+        if (CollisionUtils.checkAABB(blobs[0], blobs[1])) {
+            const edgesA = blobs[0].getEdges();
+            const edgesB = blobs[1].getEdges();
+            for (const p of blobs[0].particles)
+                for (const [a, b] of edgesB)
+                    CollisionUtils.resolveParticleEdge(p, a, b);
+            for (const p of blobs[1].particles)
+                for (const [a, b] of edgesA)
+                    CollisionUtils.resolveParticleEdge(p, a, b);
         }
 
         score.update(dt);
