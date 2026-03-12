@@ -1,3 +1,14 @@
+/**
+ * Pressure-based softbody simulation.
+ *
+ * Pressure model based on:
+ *   Maciej Matyka, "How to implement a pressure soft body model"
+ *   https://arxiv.org/abs/physics/0407003
+ *
+ * Jelly Car physics by Walaber:
+ *   https://www.youtube.com/watch?v=3OmkehAJoyo&t=262s
+ */
+
 import { GameObject } from "./GameObject.js";
 import { Particle } from "./Particle.js";
 import { Spring } from "./Spring.js";
@@ -14,7 +25,7 @@ export class Blob extends GameObject{
 
     createPoints() {
         const { particleCount, radius } = this;
-        const k = 800;
+        const k = 1800;
         for (let i = 0; i < particleCount; i++) {
             // Calculate the angle for this specific particle (in radians)
             // We divide the full circle (2 * PI) by the total number of particles
@@ -53,7 +64,46 @@ export class Blob extends GameObject{
 
     update(dt) {
         for (const s of this.springs)   s.apply(dt);
+        this.applyPressure(6000, dt);
         for (const p of this.particles) p.update(dt);
+    }
+
+    applyPressure(pressureConstant = 6000, dt = 1/60) {
+        const pts = this.particles;
+        const n = pts.length;
+        if (n < 3) return;
+
+        // Compute current area via shoelace formula
+        let area = 0;
+        for (let i = 0; i < n; i++) {
+            const j = (i + 1) % n;
+            area += pts[i].x * pts[j].y - pts[j].x * pts[i].y;
+        }
+        area = Math.abs(area) / 2;
+        if (area < 1) area = 1;
+
+        // Particles are created CW in canvas (y-down) coords.
+        // Outward normal = right-perpendicular of directed edge: (dy/len, -dx/len).
+        // The original Matyka CCW formula gave inward normals here — fixed below.
+        for (let i = 0; i < n; i++) {
+            const j = (i + 1) % n;
+            const p1 = pts[i];
+            const p2 = pts[j];
+
+            const dx = p2.x - p1.x;
+            const dy = p2.y - p1.y;
+            const len = Math.hypot(dx, dy) || 1;
+
+            const nx = dy / len;   // right-perp x  (was -dy/len — inward)
+            const ny = -dx / len;  // right-perp y  (was  dx/len — inward)
+
+            const forceMag = len * pressureConstant / area;
+            const fx = nx * forceMag;
+            const fy = ny * forceMag;
+
+            p1.applyForce(fx * dt, fy * dt);
+            p2.applyForce(fx * dt, fy * dt);
+        }
     }
 
     // Returns particle positions as vertices for SAT broad-phase.
@@ -109,9 +159,57 @@ export class Blob extends GameObject{
         this._dragParticle = null;
     }
 
+    getControlPoints(p0, p1, p2, p3, tension = 0.2) {
+        // Catmull-Rom tangent vectors
+        const c1x = p1.x + (p2.x - p0.x) * tension;
+        const c1y = p1.y + (p2.y - p0.y) * tension;
+        const c2x = p2.x - (p3.x - p1.x) * tension;
+        const c2y = p2.y - (p3.y - p1.y) * tension;
+        return { c1x, c1y, c2x, c2y };
+    }
+
     draw(ctx) {
+        //const colors = ['#9046CF', '#CC59D2', '#F487B6', '#FF5C33', '#FDE85D'];
+        //ctx.fillStyle = colors[Math.floor(Math.random() * colors.length)];
+        ctx.fillStyle = '#44ff88';
+        const pts = this.particles;
+        const n = pts.length;
+
+        // Need at least 3 points - maybe draw simple line drawn shape if fewer?
+        if (n < 3) return;
+
+        ctx.beginPath();
+        const first = this.particles[0];// Move to first real point
+        ctx.moveTo(first.x, first.y);
+
+        for (let i = 0; i < n; i++) {
+            const p0 = pts[(i - 1 + n) % n];
+            const p1 = pts[i];
+            const p2 = pts[(i + 1) % n];
+            const p3 = pts[(i + 2) % n];
+
+            const { c1x, c1y, c2x, c2y } = this.getControlPoints(p0, p1, p2, p3);
+
+            ctx.bezierCurveTo(c1x, c1y, c2x, c2y, p2.x, p2.y);
+        }
+
+        ctx.closePath();
+        ctx.fill();
+
+        // Stroke outline
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = "black";
+        ctx.stroke();
+    }
+
+    drawDebug(ctx) {
         for (const s of this.springs)  s.draw(ctx);
         for (const p of this.particles) p.draw(ctx);
+
+        /**        ctx.moveTo(first.x, first.y);
+        for (const p of this.particles) {
+            ctx.lineTo(p.x, p.y);
+        }*/
     }
 
 }
