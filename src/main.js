@@ -37,6 +37,7 @@ import { GameObject }    from './entities/GameObject.js';
 
 import { Particle }        from './entities/Particle.js';
 import { Blob }            from './entities/Blob.js';
+import { Grid }            from './entities/Grid.js';
 
 import { DebugDraw, FPSCounter } from './debug.js';
 
@@ -113,6 +114,8 @@ const blobs = [
     new Blob(canvas.width / 3,       canvas.height / 2),
     new Blob(canvas.width / 3 * 2,   canvas.height / 2),
 ];
+
+const grid = new Grid(0, 0, canvas.width, canvas.height, 64);
 
 // ── 4. Game reset ─────────────────────────────────────────────────────────────
 
@@ -205,7 +208,7 @@ function render(ctx) {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     if (gm.isMenu())    drawMenu(ctx);
-    if (gm.isPlaying()) drawGame(ctx);
+    if (gm.isPlaying()) {drawGame(ctx);         grid.draw(ctx);};
     if (gm.isPaused())  { drawGame(ctx); drawPauseOverlay(ctx); }
     if (gm.isGameOver()) drawGameOver(ctx);
 
