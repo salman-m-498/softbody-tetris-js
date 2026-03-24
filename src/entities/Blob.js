@@ -14,10 +14,20 @@ import { Particle } from "./Particle.js";
 import { Spring } from "./Spring.js";
 
 export class Blob extends GameObject{
-    constructor(x, y) {
+    /**
+     * @param {number} x
+     * @param {number} y
+     * @param {object} [options]
+     * @param {number} [options.particleCount=16]
+     * @param {number} [options.radius=64]
+     * @param {string} [options.color='#44ff88']
+     */
+    constructor(x, y, { particleCount = 16, radius = 64, color = '#6BFF8E', colorKey = 'green' } = {}) {
         super(x, y);
-        this.particleCount = 16;
-        this.radius = 64;
+        this.particleCount = particleCount;
+        this.radius   = radius;
+        this.color    = color;
+        this.colorKey = colorKey;
         this.particles = [];
         this.springs = [];
         this.createPoints();
@@ -50,13 +60,14 @@ export class Blob extends GameObject{
         const last  = this.particles[this.particles.length - 1];
         this.springs.push(new Spring(first, last, Math.hypot(first.x - last.x, first.y - last.y), k));
 
-        // Cross-springs: connect each particle to the one directly opposite
-        // These resist the blob collapsing inward and preserve overall shape
+        // Cross-springs: connect each particle to the one directly opposite.
+        // These resist the blob collapsing inward and preserve overall shape.
+        // k/3 (was k/8) — stiff enough to resist stacking weight without being rigid.
         const half = Math.floor(particleCount / 2);
         for (let i = 0; i < half; i++) {
             const a = this.particles[i];
             const b = this.particles[i + half];
-            this.springs.push(new Spring(a, b, Math.hypot(a.x - b.x, a.y - b.y), k / 8));
+            this.springs.push(new Spring(a, b, Math.hypot(a.x - b.x, a.y - b.y), k / 3));
         }
 
         return this.particles;
@@ -64,7 +75,7 @@ export class Blob extends GameObject{
 
     update(dt) {
         for (const s of this.springs)   s.apply(dt);
-        this.applyPressure(6000, dt);
+        this.applyPressure(10000, dt);
         for (const p of this.particles) p.update(dt);
     }
 
@@ -169,9 +180,7 @@ export class Blob extends GameObject{
     }
 
     draw(ctx) {
-        //const colors = ['#9046CF', '#CC59D2', '#F487B6', '#FF5C33', '#FDE85D'];
-        //ctx.fillStyle = colors[Math.floor(Math.random() * colors.length)];
-        ctx.fillStyle = '#44ff88';
+        ctx.fillStyle = this.color;
         const pts = this.particles;
         const n = pts.length;
 

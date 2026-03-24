@@ -110,22 +110,61 @@ score.loadBest();
 
 // ── Initialize GameObjects ───────────────────────────────────────────────────
 
-const blobs = [
-    new Blob(canvas.width / 3,       canvas.height / 2),
-    new Blob(canvas.width / 3 * 2,   canvas.height / 2),
-];
+const BLOB_PALETTE = {
+    red:    '#FF6B6B',
+    blue:   '#6BB5FF',
+    green:  '#6BFF8E',
+    yellow: '#FFE66B',
+};
+const BLOB_COLOR_KEYS = Object.keys(BLOB_PALETTE);
+const BLOB_MIN_RADIUS = 42;
+const BLOB_MAX_RADIUS = 60;
+const SPAWN_INTERVAL  = 3; // seconds between auto-drops
+let   spawnTimer      = SPAWN_INTERVAL;
 
-const grid = new Grid(0, 0, canvas.width, canvas.height, 64);
+const blobs = []; // starts empty — spawner handles population
+
+const grid = new Grid(0, 0, canvas.width, canvas.height, 64, BLOB_PALETTE);
+grid.init();
 
 // ── 4. Game reset ─────────────────────────────────────────────────────────────
 
 function resetGame() {
     score.reset();
     particles.clear();
+    blobs.length   = 0;
+    spawnTimer     = SPAWN_INTERVAL;
+    _clearCooldown = 0;
+}
 
-    // TODO: reset your game objects here
-    // player.x = canvas.width / 2;
-    // enemies.length = 0;
+// ── Sandtrix clear helpers ────────────────────────────────────────────────────
+
+function spawnBlob() {
+    const radius   = BLOB_MIN_RADIUS + Math.random() * (BLOB_MAX_RADIUS - BLOB_MIN_RADIUS);
+    const x        = radius + Math.random() * (canvas.width - radius * 2);
+    const colorKey = BLOB_COLOR_KEYS[Math.floor(Math.random() * BLOB_COLOR_KEYS.length)];
+    blobs.push(new Blob(x, -radius * 2, { radius, color: BLOB_PALETTE[colorKey], colorKey }));
+}
+
+let _clearCooldown = 0;
+const CLEAR_COOLDOWN = 0.6; // prevents re-triggering while blobs settle after a clear
+
+/**
+ * Sandtrix clear: any color with a contiguous left-to-right cell path is cleared.
+ * All blobs of that color are removed entirely — gravity cascades the rest down.
+ */
+function clearColors() {
+    if (_clearCooldown > 0) return;
+    const clearing = grid.getColorPaths();
+    if (clearing.length === 0) return;
+    for (const colorKey of clearing) {
+        for (let i = blobs.length - 1; i >= 0; i--) {
+            if (blobs[i].colorKey === colorKey) blobs.splice(i, 1);
+        }
+    }
+    score.add(200 * clearing.length);
+    score.hit();
+    _clearCooldown = CLEAR_COOLDOWN;
 }
 
 // ── 5. Update ─────────────────────────────────────────────────────────────────
@@ -147,9 +186,12 @@ function update(dt) {
     }
 
     if (gm.isPlaying()) {
-        // TODO: update player, enemies, etc.
-        // player.update(dt, input);
-        // for (const e of enemies) e.update(dt);
+        // Tick timers
+        _clearCooldown = Math.max(0, _clearCooldown - dt);
+
+        // Auto-spawn blobs from the top
+        spawnTimer -= dt;
+        if (spawnTimer <= 0) { spawnBlob(); spawnTimer = SPAWN_INTERVAL; }
 
         // Drag: on click find the single closest blob and grab it;
         // release all blobs when mouse is up.
@@ -170,7 +212,6 @@ function update(dt) {
 
         for (const blob of blobs) {
             blob.updateDrag(input.mouse.x, input.mouse.y, dt);
-
             Gravity.apply(blob.particles, dt);
             blob.update(dt);
             for (const p of blob.particles) {
@@ -178,23 +219,32 @@ function update(dt) {
             }
         }
 
-        // Softbody collision: particle-to-edge on both sides
-        if (CollisionUtils.checkAABB(blobs[0], blobs[1])) {
-            const edgesA = blobs[0].getEdges();
-            const edgesB = blobs[1].getEdges();
-            for (const p of blobs[0].particles)
-                for (const [a, b] of edgesB)
-                    CollisionUtils.resolveParticleEdge(p, a, b);
-            for (const p of blobs[1].particles)
-                for (const [a, b] of edgesA)
-                    CollisionUtils.resolveParticleEdge(p, a, b);
+        // Softbody blob-to-blob collision — all pairs
+        for (let i = 0; i < blobs.length; i++) {
+            for (let j = i + 1; j < blobs.length; j++) {
+                if (CollisionUtils.checkAABB(blobs[i], blobs[j])) {
+                    const edgesI = blobs[i].getEdges();
+                    const edgesJ = blobs[j].getEdges();
+                    for (const p of blobs[i].particles)
+                        for (const [a, b] of edgesJ)
+                            CollisionUtils.resolveParticleEdge(p, a, b);
+                    for (const p of blobs[j].particles)
+                        for (const [a, b] of edgesI)
+                            CollisionUtils.resolveParticleEdge(p, a, b);
+                }
+            }
+        }
+
+        // Remove blobs that have fallen completely off the bottom
+        for (let i = blobs.length - 1; i >= 0; i--) {
+            if (blobs[i].getBroadBounds().top > canvas.height + 100) blobs.splice(i, 1);
         }
 
         score.update(dt);
         particles.update(dt);
 
-        // Example: camera follow
-        // camera.follow(player, dt);
+        grid.update(dt, blobs);
+        clearColors();
     }
 
     input.update(); // MUST be last — clears justPressed flags
@@ -208,7 +258,7 @@ function render(ctx) {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     if (gm.isMenu())    drawMenu(ctx);
-    if (gm.isPlaying()) {drawGame(ctx);         grid.draw(ctx);};
+    if (gm.isPlaying()) drawGame(ctx);
     if (gm.isPaused())  { drawGame(ctx); drawPauseOverlay(ctx); }
     if (gm.isGameOver()) drawGameOver(ctx);
 
@@ -236,6 +286,8 @@ function drawGame(ctx) {
 
     particles.draw(ctx);
     camera.end(ctx);
+
+    grid.draw(ctx);
 
     // HUD (drawn in screen space, outside camera)
     drawHUD(ctx);
