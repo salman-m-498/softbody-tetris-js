@@ -123,8 +123,10 @@ const SPAWN_INTERVAL  = 3; // seconds between auto-drops
 let   spawnTimer      = SPAWN_INTERVAL;
 
 const blobs = []; // starts empty — spawner handles population
+let activeBlob = null; // the blob currently under player control
+let nextColorKey = BLOB_COLOR_KEYS[Math.floor(Math.random() * BLOB_COLOR_KEYS.length)];
 
-const grid = new Grid(0, 0, canvas.width, canvas.height, 64, BLOB_PALETTE);
+const grid = new Grid(0, 0, canvas.width, canvas.height, 28, BLOB_PALETTE);
 grid.init();
 
 // ── 4. Game reset ─────────────────────────────────────────────────────────────
@@ -133,24 +135,29 @@ function resetGame() {
     score.reset();
     particles.clear();
     blobs.length   = 0;
+    activeBlob     = null;
     spawnTimer     = SPAWN_INTERVAL;
     _clearCooldown = 0;
+    nextColorKey   = BLOB_COLOR_KEYS[Math.floor(Math.random() * BLOB_COLOR_KEYS.length)];
 }
 
-// ── Sandtrix clear helpers ────────────────────────────────────────────────────
+// ── Clear helpers ────────────────────────────────────────────────────
 
 function spawnBlob() {
     const radius   = BLOB_MIN_RADIUS + Math.random() * (BLOB_MAX_RADIUS - BLOB_MIN_RADIUS);
     const x        = radius + Math.random() * (canvas.width - radius * 2);
-    const colorKey = BLOB_COLOR_KEYS[Math.floor(Math.random() * BLOB_COLOR_KEYS.length)];
-    blobs.push(new Blob(x, -radius * 2, { radius, color: BLOB_PALETTE[colorKey], colorKey }));
+    const colorKey = nextColorKey;
+    nextColorKey   = BLOB_COLOR_KEYS[Math.floor(Math.random() * BLOB_COLOR_KEYS.length)];
+    const blob     = new Blob(x, -radius * 2, { radius, color: BLOB_PALETTE[colorKey], colorKey });
+    blobs.push(blob);
+    activeBlob = blob; // newest blob becomes the active one
 }
 
 let _clearCooldown = 0;
 const CLEAR_COOLDOWN = 0.6; // prevents re-triggering while blobs settle after a clear
 
 /**
- * Sandtrix clear: any color with a contiguous left-to-right cell path is cleared.
+ * Edge clear: any color with a contiguous left-to-right cell path is cleared.
  * All blobs of that color are removed entirely — gravity cascades the rest down.
  */
 function clearColors() {
@@ -193,25 +200,31 @@ function update(dt) {
         spawnTimer -= dt;
         if (spawnTimer <= 0) { spawnBlob(); spawnTimer = SPAWN_INTERVAL; }
 
-        // Drag: on click find the single closest blob and grab it;
-        // release all blobs when mouse is up.
-        if (input.mouse.justLeft) {
-            let bestBlob = null;
-            let bestDist = Infinity;
-            for (const blob of blobs) {
-                for (const p of blob.particles) {
-                    const d = Math.hypot(p.x - input.mouse.x, p.y - input.mouse.y);
-                    if (d < bestDist) { bestDist = d; bestBlob = blob; }
-                }
+        // ── Keyboard control of the active blob ──────────────────────────────
+        // If the active blob is no longer in the list (e.g. removed by clear),
+        // we stop trying to control it.
+        if (activeBlob && !blobs.includes(activeBlob)) activeBlob = null;
+
+        const MOVE_FORCE  = 3200; // horizontal push per second
+        const DROP_FORCE  = 1000; // extra downward impulse on tap
+        if (activeBlob) {
+            const moveLeft  = input.isDown('ArrowLeft')  || input.isDown('KeyA');
+            const moveRight = input.isDown('ArrowRight') || input.isDown('KeyD');
+            const softDrop  = input.isDown('ArrowDown')  || input.isDown('KeyS');
+            const hardDrop  = input.isJustPressed('ArrowDown') || input.isJustPressed('KeyS');
+
+            for (const p of activeBlob.particles) {
+                if (moveLeft)  p.applyForce(-MOVE_FORCE * dt, 0);
+                if (moveRight) p.applyForce( MOVE_FORCE * dt, 0);
+                if (softDrop)  p.applyForce(0,  MOVE_FORCE * dt);
             }
-            if (bestBlob) bestBlob.startDrag(input.mouse.x, input.mouse.y);
-        }
-        if (!input.mouse.left) {
-            for (const blob of blobs) blob.endDrag();
+            // Hard-drop: single-frame impulse on first press for a snappier feel
+            if (hardDrop) {
+                for (const p of activeBlob.particles) p.applyForce(0, DROP_FORCE);
+            }
         }
 
         for (const blob of blobs) {
-            blob.updateDrag(input.mouse.x, input.mouse.y, dt);
             Gravity.apply(blob.particles, dt);
             blob.update(dt);
             for (const p of blob.particles) {
@@ -309,6 +322,40 @@ function drawHUD(ctx) {
         ArcadeRenderer.pixelText(ctx, `x${combo.multiplier}`, canvas.width - 130, 9,
             10, ArcadeRenderer.COLORS.NEON_GREEN);
     }
+
+    // Next-color preview panel
+    drawNextPanel(ctx);
+}
+
+function drawNextPanel(ctx) {
+    const PAD    = 8;
+    const W      = 56;
+    const H      = 66;
+    const x      = canvas.width - W - PAD;  // right-aligned
+    const y      = 48;
+    const cx     = x + W / 2;
+    const color  = BLOB_PALETTE[nextColorKey];
+
+    // Panel background
+    ctx.save();
+    ctx.fillStyle   = 'rgba(0,0,0,0.55)';
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+    ctx.lineWidth   = 1;
+    ctx.beginPath();
+    ctx.roundRect(x, y, W, H, 6);
+    ctx.fill();
+    ctx.stroke();
+
+    // "NEXT" label
+    ctx.restore();
+    ArcadeRenderer.pixelTextCentered(ctx, 'NEXT', cx, y + 11, 6, 'rgba(255,255,255,0.6)');
+
+    // Color swatch — glowing filled circle
+    ctx.save();
+    ctx.shadowColor = color;
+    ctx.shadowBlur  = 12;
+    ArcadeRenderer.circle(ctx, cx, y + H - 22, 16, color, 'rgba(0,0,0,0.4)', 2);
+    ctx.restore();
 }
 
 function drawPauseOverlay(ctx) {
